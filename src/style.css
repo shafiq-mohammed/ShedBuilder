@@ -1,0 +1,124 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #2e2a24;
+  --bar: #3a352d;
+  --bar2: #474137;
+  --text: #ece7dc;
+  --dim: #b0a894;
+  --accent: #e0552c;
+  --ok: #4caf50;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+html, body, #app { height: 100%; overflow: hidden; }
+body { background: var(--bg); color: var(--text); }
+
+#app { display: flex; flex-direction: column; }
+
+/* ---------- top bar ---------- */
+.topbar {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bar); padding: 6px 12px;
+  border-bottom: 1px solid #241f19;
+  flex-wrap: wrap;
+}
+.logo { font-weight: 800; font-size: 17px; letter-spacing: 0.3px; white-space: nowrap; }
+.logo em { color: var(--accent); font-style: normal; }
+
+.tabs { display: flex; gap: 4px; }
+.tab {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: var(--bar2); border: 1px solid #241f19; border-radius: 6px;
+  padding: 4px 8px; cursor: pointer; color: var(--dim);
+  font-size: 11px; user-select: none;
+}
+.tab canvas { border-radius: 3px; background: #f5f2ea; }
+.tab.active { color: var(--text); border-color: var(--accent); background: #55402f; }
+.tab:hover { color: var(--text); }
+.tab .tabcost { font-size: 10px; }
+
+.spacer { flex: 1; }
+
+button.btn {
+  background: var(--bar2); color: var(--text); border: 1px solid #241f19;
+  border-radius: 6px; padding: 7px 12px; font-size: 13px; cursor: pointer;
+}
+button.btn:hover { background: #56504414; filter: brightness(1.15); }
+button.btn:disabled { opacity: 0.4; cursor: default; }
+button.btn.primary {
+  background: var(--accent); border-color: #a33a1a; font-weight: 700;
+  font-size: 14px; padding: 8px 18px;
+}
+button.btn.active { border-color: var(--accent); background: #55402f; }
+
+/* ---------- test bar ---------- */
+.testbar {
+  display: flex; align-items: center; gap: 8px;
+  background: #263238; padding: 6px 12px;
+  border-bottom: 1px solid #10171b; flex-wrap: wrap;
+}
+.testbar .status {
+  font-size: 13px; color: #cfe4f0; min-width: 220px;
+}
+.testbar .status.fail { color: #ff8a70; font-weight: 700; }
+.testbar .status.pass { color: #9ae09d; font-weight: 700; }
+.chips { display: flex; gap: 4px; }
+.chip {
+  background: #37474f; border: 1px solid #10171b; color: #cfd8dc;
+  border-radius: 12px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+}
+.chip.active { background: var(--accent); color: #fff; border-color: #a33a1a; }
+
+/* ---------- main area ---------- */
+.main { display: flex; flex: 1; min-height: 0; }
+
+.palette {
+  width: 224px; background: var(--bar); border-right: 1px solid #241f19;
+  padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;
+}
+.palette h3 { font-size: 11px; text-transform: uppercase; color: var(--dim); letter-spacing: 1px; }
+
+.lumbercard {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bar2); border: 1px solid #241f19; border-radius: 6px;
+  padding: 7px 8px; cursor: pointer; user-select: none;
+}
+.lumbercard.active { border-color: var(--accent); background: #55402f; }
+.lumbercard .swatch { border-radius: 2px; border: 1px solid rgba(0,0,0,0.4); flex: none; }
+.lumbercard .info { flex: 1; min-width: 0; }
+.lumbercard .name { font-weight: 700; font-size: 14px; }
+.lumbercard .name .price { font-weight: 400; color: var(--dim); font-size: 11px; margin-left: 6px; }
+.lumbercard .blurb { font-size: 10px; color: var(--dim); line-height: 1.25; }
+.lumbercard .key {
+  font-size: 10px; color: var(--dim); border: 1px solid #241f19; border-radius: 3px;
+  padding: 1px 5px; background: var(--bar);
+}
+.minibars { display: flex; flex-direction: column; gap: 2px; margin-top: 3px; }
+.minibar { height: 3px; background: #241f19; border-radius: 2px; overflow: hidden; }
+.minibar > div { height: 100%; border-radius: 2px; }
+
+.toolrow { display: flex; gap: 4px; }
+.toolrow .btn { flex: 1; font-size: 12px; padding: 6px 4px; }
+
+.costbox {
+  margin-top: auto; background: var(--bar2); border-radius: 6px; padding: 8px 10px;
+  font-size: 12px; color: var(--dim); line-height: 1.6;
+}
+.costbox .big { font-size: 16px; font-weight: 800; color: var(--text); }
+.costbox .over { color: #ff8a70; }
+.supportnote { font-size: 11px; color: var(--dim); line-height: 1.4; }
+
+.canvaswrap { flex: 1; position: relative; min-width: 0; }
+.canvaswrap canvas { position: absolute; inset: 0; display: block; }
+
+/* pass/fail banner */
+.banner {
+  position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
+  background: rgba(30,30,30,0.85); color: #fff; border-radius: 10px;
+  padding: 12px 26px; font-size: 20px; font-weight: 800; pointer-events: none;
+  opacity: 0; transition: opacity 0.3s;
+}
+.banner.show { opacity: 1; }
+.banner.pass { border: 2px solid var(--ok); }
+.banner.fail { border: 2px solid var(--accent); }
