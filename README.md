@@ -18,7 +18,10 @@ npm run dev        # http://localhost:5199
 
 ## How to play
 
-1. Pick a face along the top (walls, roof truss, floor deck).
+1. Pick a face along the top: four walls and the roof truss are elevations;
+   **Roof plan** and **Floor plan** are top-down layouts (purlins & roof
+   bracing across the truss tops; joists and rims on the slab). Plan views
+   are tested in 3D — the Test button takes you there.
 2. Pick lumber on the left (keys 1–5), then click-drag between grid dots to
    place a stick. Hold **Shift** to chain sticks. Right-click erases.
    Grid cells are 6 inches.
@@ -35,14 +38,14 @@ npm run dev        # http://localhost:5199
    - 🪝 **Hang storage** — click joints to hang 50–250 lb weights
    - 🧱 **Bricks** — click to drop 100/200/500/1000 lb bricks
 6. `S` = slow motion, `R` = reset test, `Esc` = back to building.
-7. 🧊 **3D** assembles all six faces into an orbitable shed (trusses & joists
-   at 2' on-center — the same spacing the 2D loads assume) — then hit
+7. 🧊 **3D** assembles everything into an orbitable shed (the roof truss is
+   raised 5x at 2' on-center; the plan views map straight in) — then hit
    **▶ Test in 3D** to physics-simulate the whole building at once: snow over
    the entire roof, wind on the front wall, bricks dropped anywhere you click.
-   Cross-face connections are real: trusses bear on wall top plates, corners
-   tie together, and a roof with no walls under it falls. Purlins between
-   trusses and floor blocking are assumed automatically (an unbraced truss row
-   would just tip over — like real framing before sheathing).
+   Every connection is real: trusses bear on wall top plates, purlins nail to
+   the rafters they cross, corners tie together. No walls under the roof and
+   it falls; delete the roof bracing and the whole roof plane rotates off its
+   bearings — like real framing before sheathing.
 
 ## What it teaches
 

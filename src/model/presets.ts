@@ -16,7 +16,7 @@ function endSupports(widthFt: number): GridPt[] {
 function wall(id: FaceId, label: string, widthFt: number, origin: [number, number, number],
   xAxis: [number, number, number]): Face {
   return {
-    id, label, widthFt, heightFt: 10, groundDrop: 0,
+    id, label, widthFt, heightFt: 10, groundDrop: 0, view: 'elevation',
     supportLabel: 'Bolted to the slab along the bottom',
     anchors: bottomRow(widthFt), budget: 260,
     joints: 'nails', members: [], panels: [],
@@ -63,17 +63,27 @@ export function defaultProject(): Project {
     wall('right', 'Right wall', 8, [12, 0, 0], [0, 0, 1]),
     {
       id: 'roof', label: 'Roof truss', widthFt: 12, heightFt: 6, groundDrop: 8,
-      supportLabel: 'Rests on the wall top plates at each end',
+      view: 'elevation',
+      supportLabel: 'Built once, raised 5x at 2\' on-center in 3D',
       anchors: endSupports(12), budget: 220,
       joints: 'nails', members: [], panels: [],
       plane: { origin: [0, 8, 0], xAxis: [1, 0, 0], yAxis: [0, 1, 0] },
     },
     {
-      id: 'floor', label: 'Floor deck', widthFt: 12, heightFt: 4, groundDrop: 2.5,
-      supportLabel: 'Sits on foundation blocks at each end',
-      anchors: endSupports(12), budget: 180,
+      id: 'roofplan', label: 'Roof plan', widthFt: 12, heightFt: 8, groundDrop: 0,
+      view: 'plan',
+      supportLabel: 'Top-down: purlins nail across the truss tops and brace them',
+      anchors: [], budget: 120,
       joints: 'nails', members: [], panels: [],
-      plane: { origin: [0, 0, 0], xAxis: [1, 0, 0], yAxis: [0, 1, 0] },
+      plane: { origin: [0, 8, 0], xAxis: [1, 0, 0], yAxis: [0, 0, 1] },
+    },
+    {
+      id: 'floorplan', label: 'Floor plan', widthFt: 12, heightFt: 8, groundDrop: 0,
+      view: 'plan',
+      supportLabel: 'Top-down: joists and rims resting on the slab',
+      anchors: [], budget: 180,
+      joints: 'nails', members: [], panels: [],
+      plane: { origin: [0, 0, 0], xAxis: [1, 0, 0], yAxis: [0, 0, 1] },
     },
   ];
   // starter design: a complete framed shed so Test-in-3D works out of the box
@@ -86,6 +96,25 @@ export function defaultProject(): Project {
   // factory trusses come with gang-nail plates: hardware, not toe-nails.
   // (Switch to nails and watch the rafter thrust rip the chords out.)
   roof.joints = 'hardware';
-  findF(faces, 'floor').members = [mem('fl_joist', '2x10', 0, 0, 24, 0)];
+  // roof plan: purlins across the truss tops (delete them and the trusses
+  // tip over like real unbraced framing)
+  const rp = findF(faces, 'roofplan');
+  rp.members = [1, 5, 9, 12, 15, 19, 23].map((i) =>
+    mem(`rp_purlin${i}`, '2x4', i, 0, i, 16));
+  // diagonal wind bracing, an X per slope: purlins alone leave the whole
+  // roof plane free to rotate about the chord lines and slide off
+  rp.members.push(
+    mem('rp_bx_l1', '2x4', 0, 0, 12, 16),
+    mem('rp_bx_l2', '2x4', 0, 16, 12, 0),
+    mem('rp_bx_r1', '2x4', 24, 0, 12, 16),
+    mem('rp_bx_r2', '2x4', 24, 16, 12, 0),
+  );
+  // floor plan: rims + joists on the slab
+  const fp = findF(faces, 'floorplan');
+  fp.members = [
+    mem('fp_rim0', '2x8', 0, 0, 24, 0),
+    mem('fp_rim1', '2x8', 0, 16, 24, 16),
+  ];
+  for (let i = 0; i <= 24; i += 4) fp.members.push(mem(`fp_j${i}`, '2x8', i, 0, i, 16));
   return { version: 1, faces };
 }

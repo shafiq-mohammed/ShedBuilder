@@ -4,7 +4,8 @@ import { pointSegDist } from '../util/vec2';
 export type JointMode = 'nails' | 'hardware';
 export const HARDWARE_COST_PER_JOINT = 1.5;
 
-export type FaceId = 'front' | 'back' | 'left' | 'right' | 'roof' | 'floor';
+export type FaceId =
+  'front' | 'back' | 'left' | 'right' | 'roof' | 'floor' | 'roofplan' | 'floorplan';
 
 /** World units are feet. Grid cell = 6 inches. */
 export const CELL = 0.5;
@@ -31,6 +32,8 @@ export interface Face {
   widthFt: number;
   heightFt: number;
   groundDrop: number;      // ft the real ground sits below grid j=0 (0 = slab face)
+  /** elevation faces are vertical planes; plan faces are top-down layouts */
+  view: 'elevation' | 'plan';
   supportLabel: string;    // what the anchors represent, shown in UI
   anchors: GridPt[];
   budget: number;

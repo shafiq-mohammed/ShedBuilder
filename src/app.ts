@@ -79,12 +79,8 @@ export class App {
       h('button.btn', { onclick: () => this.redo(), title: 'Redo (Ctrl/Cmd+Shift+Z)' }, '↷'),
       h('button.btn', { onclick: () => this.clearFace(), title: 'Clear this face' }, '🗑 Face'),
       h('button.btn', {
-        onclick: async () => {
-          if (this.mode === 'test') this.exitTest();
-          const { openView3D } = await import('./view3d/view3d');
-          openView3D(this.project);
-        },
-        title: 'See all faces assembled into a 3D shed',
+        onclick: () => this.open3D(),
+        title: 'See all faces assembled into a 3D shed (and test it there)',
       }, '🧊 3D'),
       h('button.btn', { onclick: () => exportProject(this.project), title: 'Download design as JSON' }, '⇩'),
       h('button.btn', {
@@ -167,7 +163,18 @@ export class App {
 
   // ---------- test mode ----------
 
+  async open3D() {
+    if (this.mode === 'test') this.exitTest();
+    const { openView3D } = await import('./view3d/view3d');
+    openView3D(this.project);
+  }
+
   enterTest() {
+    if (this.face.view === 'plan') {
+      // plan views load out-of-plane; they get tested in the assembled 3D sim
+      this.open3D();
+      return;
+    }
     this.mode = 'test';
     this.setScenario(this.scenarioId);
     this.refreshUI();

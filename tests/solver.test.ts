@@ -7,6 +7,7 @@ import { lumberEA, LUMBER_BY_ID } from '../src/model/lumber';
 function testFace(partial: Partial<Face>): Face {
   return {
     id: 'roof', label: 'test', widthFt: 12, heightFt: 8, groundDrop: 8,
+    view: 'elevation',
     supportLabel: '', anchors: [], budget: 999, joints: 'nails', members: [], panels: [],
     plane: { origin: [0, 0, 0], xAxis: [1, 0, 0], yAxis: [0, 1, 0] },
     ...partial,
@@ -114,6 +115,7 @@ describe('joint connections', () => {
   // with weight pulling down on its free end: nails pull out, hardware holds.
   const mkFace = (joints: 'nails' | 'hardware'): Face => ({
     id: 'roof', label: 'test', widthFt: 12, heightFt: 8, groundDrop: 8,
+    view: 'elevation',
     supportLabel: '', anchors: [{ i: 0, j: 8 }, { i: 24, j: 8 }], budget: 999,
     joints,
     members: [

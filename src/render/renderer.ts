@@ -66,6 +66,18 @@ export function render(g: CanvasRenderingContext2D, viewW: number, viewH: number
 function drawGround(g: CanvasRenderingContext2D, S: (x: number, y: number) => [number, number],
   viewW: number, viewH: number, st: RenderState) {
   const { face, cam } = st;
+  if (face.view === 'plan') {
+    // top-down layout: no ground line; just the slab footprint
+    const [x0, y0] = S(0, face.heightFt);
+    const [x1, y1] = S(face.widthFt, 0);
+    g.fillStyle = 'rgba(185,179,166,0.35)';
+    g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    g.fillStyle = '#8a8069';
+    g.font = '12px system-ui, sans-serif';
+    g.textAlign = 'left';
+    g.fillText('⬇ looking down from above', x0, y0 - 10);
+    return;
+  }
   const gy = -face.groundDrop;
   const [, syGround] = S(0, gy);
   // earth below actual ground line
@@ -143,6 +155,7 @@ function drawGrid(g: CanvasRenderingContext2D, S: (x: number, y: number) => [num
 
 function drawAnchors(g: CanvasRenderingContext2D, S: (x: number, y: number) => [number, number], st: RenderState) {
   const { face, cam } = st;
+  if (face.view === 'plan') return;
   g.fillStyle = COL.anchor;
   const step = face.anchors.length > 8 ? 4 : 1;   // slab rows: draw every 2 ft
   face.anchors.forEach((a, idx) => {

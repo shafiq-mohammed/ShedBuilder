@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { Face, Project, gridToWorld } from '../model/structure';
+import { Project } from '../model/structure';
+import { FaceInstance, faceInstances, gridWorld } from '../model/mapping3d';
 import { LUMBER_BY_ID } from '../model/lumber';
 import { h } from '../util/dom';
 import { Sim3 } from '../physics3d/solver3d';
@@ -15,52 +16,51 @@ import { stressColor } from '../util/colors';
  * every stick tinted by live stress, breaking and collapsing in 3D.
  */
 
-const SHED_DEPTH = 8;
-const SPACING = 2;
+const v3a = (a: [number, number, number]) => new THREE.Vector3(a[0], a[1], a[2]);
+const UP0 = new THREE.Vector3(0, 1, 0);
 
-const v3 = (a: [number, number, number]) => new THREE.Vector3(a[0], a[1], a[2]);
-
-function faceGroup(face: Face): THREE.Group {
+/** Static preview of one face instance, using the shared 3D mapping. */
+function instGroup(inst: FaceInstance): THREE.Group {
   const group = new THREE.Group();
-  const origin = v3(face.plane.origin);
-  const xAxis = v3(face.plane.xAxis).normalize();
-  const yAxis = v3(face.plane.yAxis).normalize();
-  const normal = new THREE.Vector3().crossVectors(xAxis, yAxis).normalize();
-  const toWorld = (x: number, y: number) =>
-    origin.clone().addScaledVector(xAxis, x).addScaledVector(yAxis, y);
-
-  for (const m of face.members) {
+  for (const m of inst.face.members) {
     const t = LUMBER_BY_ID[m.type];
     if (!t) continue;
-    const a2 = gridToWorld(m.a), b2 = gridToWorld(m.b);
-    const a = toWorld(a2.x, a2.y);
-    const b = toWorld(b2.x, b2.y);
+    const a = v3a(gridWorld(inst, m.a));
+    const b = v3a(gridWorld(inst, m.b));
     const len = a.distanceTo(b);
     if (len < 1e-6) continue;
     const dir = b.clone().sub(a).normalize();
-    const inPlane = new THREE.Vector3().crossVectors(normal, dir).normalize();
+    let z = new THREE.Vector3().crossVectors(UP0, dir);
+    if (z.lengthSq() < 1e-6) z = new THREE.Vector3(0, 0, 1);
+    z.normalize();
+    const y = new THREE.Vector3().crossVectors(dir, z).negate().normalize();
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(len, t.depthIn / 12, t.thickIn / 12),
       new THREE.MeshLambertMaterial({ color: t.color }),
     );
-    mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(dir, inPlane, normal));
+    mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(dir, y, z));
     mesh.position.copy(a.clone().add(b).multiplyScalar(0.5));
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
   }
-  for (const pn of face.panels) {
-    const a2 = gridToWorld(pn.a), b2 = gridToWorld(pn.b);
-    const cx = (a2.x + b2.x) / 2, cy = (a2.y + b2.y) / 2;
-    const w = Math.abs(b2.x - a2.x), hgt = Math.abs(b2.y - a2.y);
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(w, hgt, 0.045),
-      new THREE.MeshLambertMaterial({ color: '#d8c391' }),
-    );
-    mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, normal));
-    mesh.position.copy(toWorld(cx, cy).addScaledVector(normal, -0.1));
+  for (const pn of inst.face.panels) {
+    const i0 = Math.min(pn.a.i, pn.b.i), i1 = Math.max(pn.a.i, pn.b.i);
+    const j0 = Math.min(pn.a.j, pn.b.j), j1 = Math.max(pn.a.j, pn.b.j);
+    const corners = [
+      gridWorld(inst, { i: i0, j: j0 }), gridWorld(inst, { i: i1, j: j0 }),
+      gridWorld(inst, { i: i1, j: j1 }), gridWorld(inst, { i: i0, j: j1 }),
+    ];
+    const geo = new THREE.BufferGeometry();
+    const arr = new Float32Array(12);
+    corners.forEach((c, ix) => { arr[ix * 3] = c[0]; arr[ix * 3 + 1] = c[1]; arr[ix * 3 + 2] = c[2]; });
+    geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    geo.setIndex([0, 1, 2, 0, 2, 3]);
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
+      color: '#d8c391', side: THREE.DoubleSide,
+    }));
     mesh.castShadow = true;
-    mesh.receiveShadow = true;
     group.add(mesh);
   }
   return group;
@@ -142,22 +142,9 @@ export function openView3D(project: Project): void {
   slab.receiveShadow = true;
   scene.add(slab);
 
-  // ---------- static preview ----------
+  // ---------- static preview (shared mapping = matches the physics) ----------
   const staticGroup = new THREE.Group();
-  for (const face of project.faces) {
-    const g = faceGroup(face);
-    if (face.id === 'roof' || face.id === 'floor') {
-      const normal = new THREE.Vector3()
-        .crossVectors(v3(face.plane.xAxis), v3(face.plane.yAxis)).normalize();
-      for (let d = 0; d <= SHED_DEPTH; d += SPACING) {
-        const copy = g.clone();
-        copy.position.addScaledVector(normal, d);
-        staticGroup.add(copy);
-      }
-    } else {
-      staticGroup.add(g);
-    }
-  }
+  for (const inst of faceInstances(project)) staticGroup.add(instGroup(inst));
   scene.add(staticGroup);
 
   // ---------- test mode ----------
@@ -310,7 +297,7 @@ export function openView3D(project: Project): void {
           title: 'Simulate the whole assembled shed',
         }, '▶ Test in 3D'),
         h('span', { style: { color: '#8fa1ad', fontSize: '12px' } },
-          'Drag to orbit · scroll to zoom · trusses & joists 2\' on-center, purlins/blocking assumed'),
+          'Drag to orbit · scroll to zoom · the roof truss is raised 5x at 2\' on-center; purlins & bracing come from your Roof plan'),
       );
       return;
     }
