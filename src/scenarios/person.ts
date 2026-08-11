@@ -2,66 +2,77 @@ import { Scenario } from './scenario';
 import { Heavy, Sim } from '../physics/solver';
 
 const WEIGHT = 250;   // 200 lb worker + tool belt
-const SPEED = 2;         // ft/s target
-const RADIUS = 0.6;   // rides the top surface without snagging web members below
+const RADIUS = 0.6;
+const HOLD_S = 6;
 
-/** A 200 lb worker walks across the top of the structure, left to right. */
+/**
+ * A worker STANDS on top of the structure (nobody strolls off a roof edge).
+ * Click anywhere to move him — he drops onto whatever is below the click.
+ */
 export function makePerson(): Scenario {
   let hv: Heavy | null = null;
+  let standT = 0;
 
-  const spawn = (sim: Sim, face: { widthFt: number }) => {
-    // find the highest structural point near the left edge to start on
-    let topY = 0;
+  const spawnAt = (sim: Sim, x: number, y: number) => {
+    if (hv) sim.removeHeavy(hv);
+    hv = sim.addHeavy(x, y, WEIGHT, RADIUS, 'person', 'worker');
+    hv.friction = 0.15;   // standing grip, no walking drive
+    standT = 0;
+  };
+
+  const spawnOnTop = (sim: Sim, face: { widthFt: number }) => {
+    // stand him over the middle of the structure's top surface
+    const cx = face.widthFt / 2;
+    let best = -1, bestScore = -Infinity;
     for (const s of sim.segs) {
-      const a = sim.parts[s.p1], b = sim.parts[s.p2];
-      for (const p of [a, b]) {
-        if (p.x < 2.5 && p.y > topY) topY = p.y;
+      for (const idx of [s.p1, s.p2]) {
+        const p = sim.parts[idx];
+        const score = p.y - Math.abs(p.x - cx) * 0.4;
+        if (score > bestScore) { bestScore = score; best = idx; }
       }
     }
-    hv = sim.addHeavy(0.3, topY + RADIUS + 0.5, WEIGHT, RADIUS, 'person', 'worker');
+    if (best < 0) return;
+    const p = sim.parts[best];
+    spawnAt(sim, p.x, p.y + RADIUS + 0.4);
   };
 
   return {
     id: 'person',
     label: 'Person',
-    icon: '🚶',
-    desc: `A ${WEIGHT} lb worker walks across the top.`,
+    icon: '🧍',
+    desc: `A ${WEIGHT} lb worker stands on top. Click to move him.`,
     goodFaces: ['roof', 'floor'],
-    setup({ sim, face }) { spawn(sim, face); },
-    tick({ sim, face }, dt) {
+    setup({ sim, face }) { spawnOnTop(sim, face); },
+    tick({ sim }, dt) {
       if (!hv) return;
       const p = sim.parts[hv.p];
-      if (hv.passed || hv.fell) return;
-      if (p.x > face.widthFt - 0.3) { hv.passed = true; return; }
+      if (hv.fell) return;
       if (p.y < sim.groundY + RADIUS + 0.1) { hv.fell = true; return; }
-      if (p.x < -1) { hv.fell = true; return; }   // slid off the left edge
-      // drive toward the right at walking speed. Walking grip is strong: he
-      // can climb a steep rafter, but not a vertical wall.
-      const vx = (p.x - p.px) / Math.max(dt, 1e-6);
-      if (vx < SPEED) {
-        p.fx += Math.min((SPEED - vx) * hv.weightLb * 0.8, hv.weightLb * 0.9);
-      }
+      standT += dt;
+    },
+    onClick({ sim }, x, y) {
+      spawnAt(sim, x, Math.max(y + 1, sim.groundY + RADIUS + 1));
     },
     draw(g, toScreen, scale, { sim }) {
       if (!hv) return;
       const p = sim.parts[hv.p];
       const [sx, sy] = toScreen(p.x, p.y);
       const r = RADIUS * scale;
-      g.font = `${Math.max(16, r * 2.4).toFixed(0)}px sans-serif`;
+      g.font = `${Math.max(16, r * 2.6).toFixed(0)}px sans-serif`;
       g.textAlign = 'center';
       g.textBaseline = 'middle';
-      g.fillText(hv.fell ? '🤕' : '🚶', sx, sy - r * 0.2);
+      g.fillText(hv.fell ? '🤕' : '🧍', sx, sy - r * 0.2);
     },
-    status({ sim, face }) {
-      if (!hv) return { text: 'No structure to walk on!', done: true, passed: false };
-      if (hv.fell || (sim.breakCount > 0 && !hv.passed)) {
-        return { text: hv.fell ? 'The worker fell through! 🤕' : `Broke under the worker (${sim.breakCount} breaks)`, done: hv.fell === true, passed: false };
+    status({ sim }) {
+      if (!hv) return { text: 'Nothing to stand on!', done: true, passed: false };
+      if (hv.fell) return { text: 'He fell through! 🤕', done: true, passed: false };
+      if (sim.breakCount > 0) {
+        return { text: `Broke under the worker (${sim.breakCount} breaks)`, done: true, passed: false };
       }
-      if (hv.passed) {
-        return { text: `Made it across, ${sim.breakCount === 0 ? 'no damage' : `${sim.breakCount} breaks`}! 🏆`, done: true, passed: sim.breakCount === 0 };
+      if (standT >= HOLD_S) {
+        return { text: `Held the ${WEIGHT} lb worker, steady as a rock 🏆`, done: true, passed: true };
       }
-      const p = sim.parts[hv.p];
-      return { text: `Walking… ${Math.round((p.x / face.widthFt) * 100)}% across`, done: false, passed: true };
+      return { text: `Standing (${WEIGHT} lb)… ${Math.max(0, HOLD_S - standT).toFixed(0)}s to go`, done: false, passed: true };
     },
   };
 }

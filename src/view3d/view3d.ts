@@ -106,17 +106,67 @@ export function openView3D(project: Project): void {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#cfe0ea');
-  scene.fog = new THREE.Fog('#cfe0ea', 60, 140);
+  scene.fog = new THREE.Fog('#cfe0ea', 110, 240);
 
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 300);
   const dims0 = project.dims ?? { widthFt: 12, depthFt: 8, wallHFt: 8 };
-  camera.position.set(dims0.widthFt * 2, dims0.wallHFt + 8, dims0.depthFt * 2.6);
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.set(dims0.widthFt / 2, dims0.wallHFt / 2, dims0.depthFt / 2);
-  controls.enableDamping = true;
+  const center = new THREE.Vector3(dims0.widthFt / 2, dims0.wallHFt / 2 + 1, dims0.depthFt / 2);
+  const persp = new THREE.PerspectiveCamera(50, 1, 0.1, 300);
+  persp.position.set(dims0.widthFt * 2, dims0.wallHFt + 8, dims0.depthFt * 2.6);
+  const ortho = new THREE.OrthographicCamera(-20, 20, 15, -15, 0.1, 300);
+  let camera: THREE.PerspectiveCamera | THREE.OrthographicCamera = persp;
+  type ViewName = 'orbit' | 'front' | 'back' | 'left' | 'right' | 'top';
+  let currentView: ViewName = 'orbit';
+
+  const makeControls = (cam: THREE.Camera) => {
+    const c = new OrbitControls(cam as THREE.PerspectiveCamera, renderer.domElement);
+    c.target.copy(center);
+    c.enableDamping = true;
+    c.minDistance = 4;
+    c.maxDistance = 120;
+    return c;
+  };
+  let controls = makeControls(persp);
   controls.maxPolarAngle = Math.PI * 0.52;
-  controls.minDistance = 4;
-  controls.maxDistance = 90;
+
+  const sizeOrtho = () => {
+    const el = renderer.domElement;
+    const aspect = el.clientWidth / Math.max(1, el.clientHeight);
+    const half = Math.max(dims0.widthFt, dims0.depthFt, dims0.wallHFt + 8) * 0.72;
+    ortho.left = -half * aspect;
+    ortho.right = half * aspect;
+    ortho.top = half;
+    ortho.bottom = -half;
+    ortho.updateProjectionMatrix();
+  };
+
+  /** True elevation/plan views of the running sim: read one side's strain
+   * with the loads visible, like the 2D editor but live. */
+  const setView = (v: ViewName) => {
+    currentView = v;
+    controls.dispose();
+    if (v === 'orbit') {
+      camera = persp;
+      controls = makeControls(persp);
+      controls.maxPolarAngle = Math.PI * 0.52;
+    } else {
+      const D = 80;
+      const pos: Record<Exclude<ViewName, 'orbit'>, [number, number, number]> = {
+        front: [center.x, center.y, center.z + D],
+        back: [center.x, center.y, center.z - D],
+        left: [center.x - D, center.y, center.z],
+        right: [center.x + D, center.y, center.z],
+        top: [center.x, center.y + D, center.z + 0.01],
+      };
+      ortho.position.set(...pos[v]);
+      ortho.up.set(0, 1, 0);
+      ortho.lookAt(center);
+      sizeOrtho();
+      camera = ortho;
+      controls = makeControls(ortho);
+      controls.enableRotate = false;   // stay a true side view; pan/zoom only
+    }
+    refreshBar();
+  };
 
   scene.add(new THREE.HemisphereLight('#e8f2ff', '#8a7a5c', 0.9));
   const sun = new THREE.DirectionalLight('#fff4e0', 1.6);
@@ -290,6 +340,17 @@ export function openView3D(project: Project): void {
   };
 
   // ---------- bar UI ----------
+  const viewChips = (): HTMLElement[] => {
+    const views: [ViewName, string][] = [
+      ['orbit', '🧭 Orbit'], ['front', 'Front'], ['back', 'Back'],
+      ['left', 'Left'], ['right', 'Right'], ['top', 'Top'],
+    ];
+    return views.map(([v, label]) => h('button', {
+      class: `chip${currentView === v ? ' active' : ''}`,
+      onclick: () => setView(v),
+      title: v === 'orbit' ? 'Free orbit' : `Flat ${v} view — read this side's strain`,
+    }, label));
+  };
   const refreshBar = () => {
     barButtons.innerHTML = '';
     if (!sim) {
@@ -298,8 +359,9 @@ export function openView3D(project: Project): void {
           onclick: () => startTest(SCENARIOS3[0]),
           title: 'Simulate the whole assembled shed',
         }, '▶ Test in 3D'),
+        ...viewChips(),
         h('span', { style: { color: '#8fa1ad', fontSize: '12px' } },
-          'Drag to orbit · scroll to zoom · the roof truss is raised 5x at 2\' on-center; purlins & bracing come from your Roof plan'),
+          'Trusses raise at 2\' on-center onto your wall plates; purlins & bracing come from your Roof plan'),
       );
       return;
     }
@@ -326,6 +388,7 @@ export function openView3D(project: Project): void {
         style: slowmo ? { borderColor: '#e0552c' } : {},
         title: 'Slow motion',
       }, '🐌 ¼×'),
+      ...viewChips(),
       h('button.btn', { onclick: () => stopTest() }, '⏹ Preview'),
     );
   };
@@ -360,8 +423,9 @@ export function openView3D(project: Project): void {
   const resize = () => {
     const w = canvasHost.clientWidth, hh = canvasHost.clientHeight;
     renderer.setSize(w, hh);
-    camera.aspect = w / hh;
-    camera.updateProjectionMatrix();
+    persp.aspect = w / hh;
+    persp.updateProjectionMatrix();
+    sizeOrtho();
   };
   const ro = new ResizeObserver(resize);
   ro.observe(canvasHost);

@@ -38,6 +38,8 @@ export function makeSnow3(): Scenario3 {
   let cols: { part: number }[] = [];
   let lastScan = -1;
   let total = 0;
+  let heldLb = 0;
+  let failLb: number | null = null;
   const scan = (sim: Sim3) => {
     // 1 ft (x) columns per truss line: highest particle wins
     const tops = new Map<string, number>();
@@ -78,7 +80,9 @@ export function makeSnow3(): Scenario3 {
     },
     status(sim) {
       const f = failText(sim);
-      if (f) return `Roof failed under ${Math.round(total)} lb of snow — ${f}`;
+      if (f && failLb === null) failLb = Math.round(heldLb);
+      if (!f) heldLb = Math.max(heldLb, total);
+      if (f) return `Roof gave way — held ${failLb} lb of snow before failing (${f})`;
       return t < RAMP
         ? `Snow: ${Math.round(total)} lb (piling up…)`
         : `Holding ${Math.round(total)} lb of snow 🏆`;
@@ -86,12 +90,18 @@ export function makeSnow3(): Scenario3 {
   };
 }
 
+const psfToMph = (psf: number) => Math.sqrt(Math.max(0, psf) / 0.00256);
+
 export function makeWind3(): Scenario3 {
   const PSF = 15, RAMP = 8;
+  const MAX_MPH = Math.round(psfToMph(PSF * 1.35));
   let t = 0;
   let weights: { part: number; area: number }[] = [];
   let computed = false;
   let total = 0;
+  let mphNow = 0;
+  let resistedMph = 0;
+  let failMph: number | null = null;
   const noise = makeNoise1D(11);
   const compute = (sim: Sim3) => {
     // wind blows along +z at the front wall; each front-wall particle takes
@@ -111,13 +121,14 @@ export function makeWind3(): Scenario3 {
   };
   return {
     id: 'wind', label: 'Wind', icon: '💨',
-    desc: `Gusts to ~${PSF} psf against the front wall.`,
+    desc: `Wind gusting to ~${MAX_MPH} mph against the front wall.`,
     tick(sim, dt) {
       if (!computed) compute(sim);
       t += dt;
       const ramp = Math.min(t / RAMP, 1);
       const gust = Math.max(0, 1 + 0.35 * Math.sin(1.7 * t) + 0.25 * noise(t * 0.8));
       const psf = PSF * ramp * gust;
+      mphNow = psfToMph(psf);
       total = 0;
       for (const w of weights) {
         const f = psf * w.area;
@@ -128,10 +139,12 @@ export function makeWind3(): Scenario3 {
     status(sim) {
       if (weights.length === 0 && computed) return 'No front wall to push on!';
       const f = failText(sim);
-      if (f) return `Blown apart at ${Math.round(total)} lb — ${f}`;
+      if (f && failMph === null) failMph = Math.round(resistedMph);
+      if (!f) resistedMph = Math.max(resistedMph, mphNow);
+      if (f) return `Blown down — resisted gusts up to ~${failMph} mph (${f})`;
       return t < RAMP
-        ? `Wind: ${Math.round(total)} lb (building…)`
-        : `Riding out ${Math.round(total)} lb gusts 🏆`;
+        ? `Wind: ${Math.round(mphNow)} mph (building…)`
+        : `Riding out ${Math.round(mphNow)} mph gusts 🏆 (max ${MAX_MPH})`;
     },
   };
 }

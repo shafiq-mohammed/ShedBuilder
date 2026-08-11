@@ -1,4 +1,4 @@
-import { Face, GridPt, Project, clampDims, gridToWorld } from './structure';
+import { CELL, Face, GridPt, Project, clampDims, gridToWorld } from './structure';
 
 /**
  * Shared 2D-face -> 3D-world mapping, used by both the 3D compiler and the
@@ -13,6 +13,23 @@ import { Face, GridPt, Project, clampDims, gridToWorld } from './structure';
  */
 
 export const SPACING = 2;      // truss copies on-center
+
+/**
+ * The height trusses actually bear at: the highest horizontal member (top
+ * plate) framed in the side walls. Falls back to the Size setting if the
+ * side walls are empty — so trusses sit on what you really built instead of
+ * hovering above short walls or sinking into tall ones.
+ */
+export function plateHeight(project: Project): number {
+  let h = 0;
+  for (const id of ['left', 'right']) {
+    const f = project.faces.find((x) => x.id === id);
+    for (const m of f?.members ?? []) {
+      if (m.a.j === m.b.j && m.a.j > 0) h = Math.max(h, m.a.j * CELL);
+    }
+  }
+  return h > 0 ? h : clampDims(project.dims).wallHFt;
+}
 
 export type V3 = [number, number, number];
 
@@ -52,6 +69,7 @@ export function faceInstances(project: Project): FaceInstance[] {
   const out: FaceInstance[] = [];
   const profile = roofProfile(project);
   const dims = clampDims(project.dims);
+  const plateH = plateHeight(project);
   for (const face of project.faces) {
     if (face.view === 'plan') {
       if (face.id === 'floorplan') {
@@ -59,7 +77,7 @@ export function faceInstances(project: Project): FaceInstance[] {
       } else {
         out.push({
           face, offset: 0,
-          toWorld: (lx, ly) => [lx, dims.wallHFt + profile(lx), ly],
+          toWorld: (lx, ly) => [lx, plateH + profile(lx), ly],
         });
       }
       continue;
@@ -71,12 +89,13 @@ export function faceInstances(project: Project): FaceInstance[] {
     const offsets = face.id === 'roof'
       ? Array.from({ length: Math.floor(dims.depthFt / SPACING) + 1 }, (_, k) => k * SPACING)
       : [0];
+    const oy = face.id === 'roof' ? plateH : o[1];
     for (const d of offsets) {
       out.push({
         face, offset: d,
         toWorld: (lx, ly) => [
           o[0] + xa[0] * lx + ya[0] * ly + nx * d,
-          o[1] + xa[1] * lx + ya[1] * ly + ny * d,
+          oy + xa[1] * lx + ya[1] * ly + ny * d,
           o[2] + xa[2] * lx + ya[2] * ly + nz * d,
         ],
       });

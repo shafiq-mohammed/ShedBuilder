@@ -2,16 +2,21 @@ import { Scenario } from './scenario';
 import { makeNoise1D } from '../util/noise';
 import { Sim } from '../physics/solver';
 
-const TARGET_PSF = 15;    // ~ 75 mph gust pressure
+const TARGET_PSF = 15;    // q = 0.00256 V^2  ->  ~76 mph gusts
 const TRIB_FT = 2;        // studs at 2 ft on-center (siding transfers to frame)
 const RAMP_S = 8;
 const HOLD_S = 8;
+const psfToMph = (psf: number) => Math.sqrt(Math.max(0, psf) / 0.00256);
+const MAX_MPH = Math.round(psfToMph(TARGET_PSF * 1.35));   // incl. gust factor
 
 /** Horizontal wind pressure with gusts, blowing left-to-right on the face. */
 export function makeWind(): Scenario {
   let t = 0;
   let weights: { part: number; area: number }[] = [];
   let totalLb = 0;
+  let mphNow = 0;
+  let resistedMph = 0;      // strongest gust survived so far
+  let failMph: number | null = null;
   const noise = makeNoise1D(7);
 
   const computeWeights = (sim: Sim) => {
@@ -32,7 +37,7 @@ export function makeWind(): Scenario {
     id: 'wind',
     label: 'Wind',
     icon: '💨',
-    desc: `Gusting wind up to ~${TARGET_PSF} psf pushes on the wall.`,
+    desc: `Wind gusting to ~${MAX_MPH} mph pushes on the wall.`,
     goodFaces: ['front', 'back', 'left', 'right'],
     setup({ sim }) { computeWeights(sim); },
     tick({ sim }, dt) {
@@ -40,6 +45,7 @@ export function makeWind(): Scenario {
       const ramp = Math.min(t / RAMP_S, 1);
       const gust = 1 + 0.35 * Math.sin(1.7 * t) + 0.25 * noise(t * 0.8);
       const psf = TARGET_PSF * ramp * Math.max(gust, 0);
+      mphNow = psfToMph(psf);
       totalLb = 0;
       for (const w of weights) {
         const f = psf * w.area;
@@ -64,17 +70,17 @@ export function makeWind(): Scenario {
       }
     },
     status({ sim }) {
-      const lb = Math.round(totalLb);
-      if (sim.breakCount > 0) {
-        return { text: `Wall broke apart at ${lb} lb of wind (${sim.breakCount} breaks)`, done: true, passed: false };
-      }
-      if (sim.maxDrift() > 1.5) {
-        return { text: 'The wall racked over! Add diagonal bracing or sheathing.', done: true, passed: false };
+      const failed = sim.breakCount > 0 || sim.maxDrift() > 1.5;
+      if (failed && failMph === null) failMph = Math.round(resistedMph);
+      if (!failed) resistedMph = Math.max(resistedMph, mphNow);
+      if (failed) {
+        const why = sim.breakCount > 0 ? `${sim.breakCount} breaks` : 'racked over — add bracing or sheathing';
+        return { text: `Blown down — resisted gusts up to ~${failMph} mph (${why})`, done: true, passed: false };
       }
       if (t >= RAMP_S + HOLD_S) {
-        return { text: `Rode out the storm (peak ~${lb} lb)! 🏆`, done: true, passed: true };
+        return { text: `Rode out ${MAX_MPH} mph gusts! 🏆`, done: true, passed: true };
       }
-      return { text: `Wind: ${lb} lb ${t < RAMP_S ? '(building…)' : '(gusting…)'}`, done: false, passed: true };
+      return { text: `Wind: ${Math.round(mphNow)} mph ${t < RAMP_S ? '(building…)' : '(gusting…)'}`, done: false, passed: true };
     },
   };
 }
