@@ -1,4 +1,4 @@
-import { Face, FaceId, Project, findFace } from './model/structure';
+import { Face, FaceId, Project, clampDims, findFace } from './model/structure';
 import { LUMBER_BY_ID } from './model/lumber';
 import { History } from './model/history';
 import { exportProject, importProject, loadProject, saveDebounced } from './model/storage';
@@ -82,6 +82,10 @@ export class App {
         onclick: () => this.open3D(),
         title: 'See all faces assembled into a 3D shed (and test it there)',
       }, '🧊 3D'),
+      h('button.btn', {
+        onclick: () => this.resizeShed(),
+        title: 'Set the shed footprint and wall height',
+      }, '📐 Size'),
       h('button.btn', { onclick: () => exportProject(this.project), title: 'Download design as JSON' }, '⇩'),
       h('button.btn', {
         onclick: () => importProject((p) => { this.project = p; this.exitTest(); saveDebounced(p); this.refreshUI(); this.fitCamera(); }),
@@ -159,6 +163,33 @@ export class App {
     this.face.panels = [];
     saveDebounced(this.project);
     this.refreshUI();
+  }
+
+  resizeShed() {
+    if (this.mode !== 'build') return;
+    const d = this.project.dims;
+    const ask = (label: string, cur: number): number | null => {
+      const raw = prompt(label, String(cur));
+      if (raw === null) return null;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : cur;
+    };
+    const widthFt = ask('Shed width in ft (front/back walls, truss span) — even, 8-24:', d.widthFt);
+    if (widthFt === null) return;
+    const depthFt = ask('Shed depth in ft (side walls) — even, 6-16:', d.depthFt);
+    if (depthFt === null) return;
+    const wallHFt = ask('Wall height in ft — even, 6-12:', d.wallHFt);
+    if (wallHFt === null) return;
+    const dims = clampDims({ widthFt, depthFt, wallHFt });
+    if (!confirm(
+      `Rebuild as a ${dims.widthFt}' x ${dims.depthFt}' shed with ${dims.wallHFt}' walls?\n` +
+      'This replaces your current design with a starter frame at the new size ' +
+      '(use the export button first if you want to keep this one).')) return;
+    this.project = defaultProject(dims);
+    saveDebounced(this.project);
+    this.setFace('front');
+    this.refreshUI();
+    this.fitCamera();
   }
 
   // ---------- test mode ----------

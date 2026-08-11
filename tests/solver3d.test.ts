@@ -177,8 +177,35 @@ describe('3D snow on the starter shed', () => {
     expect(r.drift).toBeLessThan(1);
   }, 30000);
 
-  it('unbraced walls rack and collapse under the same snow', async () => {
-    const r = await runSnow('nails', false);
-    expect(r.breaks + (r.drift > 2 ? 1 : 0)).toBeGreaterThan(0);
+  it('a 100 lb brick on a corner does NOT flatten an unbraced frame', async () => {
+    // nailed joints carry real moment: a tap wobbles the frame, nothing more
+    const project = defaultProject();
+    for (const f of project.faces) {
+      f.members = f.members.filter((m) => !m.id.includes('brace') && !m.id.includes('bx'));
+    }
+    const sim = compile3d(project);
+    sim.addHeavy(0.5, 10, 0.5, 100, 0.5, '100');   // corner drop
+    for (let i = 0; i < 8 * 60; i++) {
+      sim.clearForces();
+      sim.step(1 / 60);
+    }
+    expect(sim.breakCount).toBe(0);
+    expect(sim.maxDrift()).toBeLessThan(1);
   }, 30000);
+
+  it('the same unbraced frame still racks over in a windstorm', async () => {
+    const { makeWind3 } = await import('../src/physics3d/scenarios3d');
+    const project = defaultProject();
+    for (const f of project.faces) {
+      f.members = f.members.filter((m) => !m.id.includes('brace') && !m.id.includes('bx'));
+    }
+    const sim = compile3d(project);
+    const wind = makeWind3();
+    for (let i = 0; i < 25 * 60; i++) {
+      sim.clearForces();
+      if (!sim.settling) wind.tick(sim, 1 / 60);
+      sim.step(1 / 60);
+    }
+    expect(sim.breakCount + (sim.maxDrift() > 1.5 ? 1 : 0)).toBeGreaterThan(0);
+  }, 40000);
 });

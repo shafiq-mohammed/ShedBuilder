@@ -20,7 +20,7 @@ export function loadProject(): Project {
       const p = JSON.parse(raw) as Project;
       if (p.version === 1 && Array.isArray(p.faces)) {
         // Merge with defaults so new preset fields survive old saves
-        const def = defaultProject();
+        const def = defaultProject(p.dims);
         for (const face of def.faces) {
           const saved = p.faces.find((f) => f.id === face.id);
           if (saved) {

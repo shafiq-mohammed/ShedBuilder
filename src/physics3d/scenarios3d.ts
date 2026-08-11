@@ -1,8 +1,5 @@
 import { Sim3 } from './solver3d';
-import { SHED_DEPTH } from './compile3d';
 import { makeNoise1D } from '../util/noise';
-
-const ROOF_FOOTPRINT_FT2 = 12 * SHED_DEPTH;
 
 export interface Scenario3 {
   id: string;
@@ -72,7 +69,7 @@ export function makeSnow3(): Scenario3 {
       // full design load spread over however many top-surface columns exist,
       // so total = psf x footprint whether or not the roof is fully decked
       const perCol = cols.length > 0
-        ? (ramp * PSF * ROOF_FOOTPRINT_FT2) / cols.length : 0;
+        ? (ramp * PSF * sim.footprint) / cols.length : 0;
       total = 0;
       for (const c of cols) {
         sim.parts[c.part].fy -= perCol;

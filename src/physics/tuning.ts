@@ -32,6 +32,14 @@ export const TUNE = {
   // Compression bears wood-on-wood and never fails.
   CONN_CAP_NAILS: 450,      // 2-3 toe-nails
   CONN_CAP_HARDWARE: 1500,  // joist hanger / rafter tie / bracket
+
+  // Nailed joints also carry a small MOMENT before the nails work loose:
+  // that's why a real unbraced stud frame stands (wobbly) instead of
+  // folding flat from a tap. Springs yield (become pins) past the limit.
+  JOINT_K_NAILS: 2500,      // lbf*ft per radian
+  JOINT_K_HARDWARE: 6000,
+  JOINT_YIELD_NAILS: 0.12,  // rad of joint rotation before nails yield
+  JOINT_YIELD_HARDWARE: 0.15,
   MIN_PART_MASS: 2.5,       // lb, numerical floor (feather-light nodes take huge
                             // ballistic substeps under point loads -> fake strain)
 

@@ -29,16 +29,21 @@ npm run dev        # http://localhost:5199
    panels stop walls from racking).
 4. Pick joint fastening in the palette: 🔨 toe-nails (cheap, pull out ~450 lb)
    or 🔩 hangers & brackets (~1500 lb, $1.50/joint). Hanging storage and wind
-   uplift will find your weak joints.
-5. Hit **▶ Test it** (Space) and pick a load:
+   uplift will find your weak joints. Nailed joints also carry a small moment
+   before yielding — an unbraced frame stands and shrugs off a dropped brick,
+   but still racks over in a storm. Bracing is for storms, not for standing.
+5. 📐 **Size** sets the shed footprint and wall height (8-24' x 6-16', walls
+   6-12') — every view, the truss span, and the 3D assembly follow.
+6. Hit **▶ Test it** (Space) and pick a load:
    - ⚖️ **Self-weight** — does it hold itself up?
    - ❄️ **Snow** — ramps to 40 psf on the roof line
    - 🚶 **Person** — a 200 lb worker walks across the top
    - 💨 **Wind** — gusts to ~15 psf pushing on a wall
    - 🪝 **Hang storage** — click joints to hang 50–250 lb weights
    - 🧱 **Bricks** — click to drop 100/200/500/1000 lb bricks
-6. `S` = slow motion, `R` = reset test, `Esc` = back to building.
-7. 🧊 **3D** assembles everything into an orbitable shed (the roof truss is
+7. `S` = slow motion, `R` = reset test, `Esc` = back to building. 2D tests
+   are bench tests — one face alone; the assembled building tests in 3D.
+8. 🧊 **3D** assembles everything into an orbitable shed (the roof truss is
    raised 5x at 2' on-center; the plan views map straight in) — then hit
    **▶ Test in 3D** to physics-simulate the whole building at once: snow over
    the entire roof, wind on the front wall, bricks dropped anywhere you click.

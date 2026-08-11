@@ -13,6 +13,10 @@ export function buildTestbar(app: App): { el: HTMLElement; refresh: () => void }
 
   const el = h('div.testbar', {},
     h('button.btn', { onclick: () => app.exitTest(), title: 'Back to building (Esc)' }, '← Build'),
+    h('span', {
+      style: { fontSize: '11px', color: '#8fa1ad', maxWidth: '130px', lineHeight: '1.2' },
+      title: 'This tests one face by itself, like framing on the ground. The assembled building (corners, roof, all walls together) is tested in the 3D view.',
+    }, 'bench test: this face alone — whole building in 🧊 3D'),
     ...SCENARIOS.map(({ id }) => {
       const proto = SCENARIOS.find((s) => s.id === id)!.make();
       const btn = h<'button'>('button.btn', {

@@ -54,6 +54,17 @@ export interface Bend3 {
   lx: number; ly: number; lz: number;   // per-component lambdas
 }
 
+/** Nailed-joint moment spring (see 2D JointSpring): chord-distance spring
+ * across the knee of two members at a joint; yields into a pin past limit. */
+export interface Spring3 {
+  p1: number; p2: number;
+  rest: number;
+  alpha: number;
+  yieldC: number;
+  dead: boolean;
+  lambda: number;
+}
+
 export interface Diag3 {
   p1: number; p2: number;
   rest: number;
@@ -85,11 +96,14 @@ export class Sim3 {
   parts: P3[] = [];
   segs: Seg3[] = [];
   bends: Bend3[] = [];
+  springs: Spring3[] = [];
   diags: Diag3[] = [];
   panels: Panel3[] = [];
   heavies: Heavy3[] = [];
   /** face ids each particle belongs to (for wind loading) */
   faceOf = new Map<number, Set<string>>();
+  /** roof footprint area for snow loading, ft^2 */
+  footprint = 96;
   groundY = 0;
   time = 0;
   settleLeft = TUNE.SETTLE_TIME;
@@ -144,12 +158,14 @@ export class Sim3 {
     for (const s of this.segs) s.lambda = 0;
     for (const b of this.bends) { b.lx = 0; b.ly = 0; b.lz = 0; }
     for (const d of this.diags) d.lambda = 0;
+    for (const sp of this.springs) sp.lambda = 0;
 
     const h2 = h * h;
     for (let it = 0; it < TUNE.ITERS; it++) {
       this.solveSegs(h2);
       this.solveBends(h2);
       this.solveDiags(h2);
+      this.solveSprings(h2);
       this.solveHeavyCollisions();
       this.solveGround();
     }
@@ -225,6 +241,27 @@ export class Sim3 {
       a.x -= dl * a.w * nx; a.y -= dl * a.w * ny; a.z -= dl * a.w * nz;
       b.x += dl * b.w * nx; b.y += dl * b.w * ny; b.z += dl * b.w * nz;
       dg.stress = Math.abs(C / dg.rest) / dg.capStrain;
+    }
+  }
+
+  private solveSprings(h2: number) {
+    const parts = this.parts;
+    for (const sp of this.springs) {
+      if (sp.dead) continue;
+      const a = parts[sp.p1], b = parts[sp.p2];
+      const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (d < 1e-9) continue;
+      const C = d - sp.rest;
+      if (Math.abs(C) > sp.yieldC) { sp.dead = true; continue; }  // nails let go
+      const at = sp.alpha / h2;
+      const wsum = a.w + b.w + at;
+      if (wsum < 1e-12) continue;
+      const dl = (-C - at * sp.lambda) / wsum;
+      sp.lambda += dl;
+      const nx = dx / d, ny = dy / d, nz = dz / d;
+      a.x -= dl * a.w * nx; a.y -= dl * a.w * ny; a.z -= dl * a.w * nz;
+      b.x += dl * b.w * nx; b.y += dl * b.w * ny; b.z += dl * b.w * nz;
     }
   }
 

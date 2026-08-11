@@ -53,6 +53,20 @@ export interface Rope {
   lambda: number;
 }
 
+/**
+ * Nailed-joint moment spring, modeled as a weak distance spring across the
+ * knee of two members meeting at a joint (chord length encodes the angle).
+ * Yields into a plain pin when the joint rotates past its limit.
+ */
+export interface JointSpring {
+  p1: number; p2: number;
+  rest: number;
+  alpha: number;
+  yieldC: number;
+  dead: boolean;
+  lambda: number;
+}
+
 export interface PanelDiag {
   p1: number; p2: number;
   rest: number;
@@ -90,6 +104,7 @@ export class Sim {
   segs: Segment[] = [];
   bends: BendAngle[] = [];
   ropes: Rope[] = [];
+  springs: JointSpring[] = [];
   diags: PanelDiag[] = [];
   panels: SimPanel[] = [];
   heavies: Heavy[] = [];
@@ -156,6 +171,7 @@ export class Sim {
     for (const b of this.bends) b.lambda = 0;
     for (const d of this.diags) d.lambda = 0;
     for (const r of this.ropes) r.lambda = 0;
+    for (const sp of this.springs) sp.lambda = 0;
 
     const h2 = h * h;
     for (let it = 0; it < TUNE.ITERS; it++) {
@@ -163,6 +179,7 @@ export class Sim {
       this.solveBends(h2);
       this.solveDiags(h2);
       this.solveRopes(h2);
+      this.solveSprings(h2);
       this.solveHeavyCollisions();
       this.solveGround();
     }
@@ -268,6 +285,27 @@ export class Sim {
         b.px += nx * vr * D * (b.w / wt); b.py += ny * vr * D * (b.w / wt);
         a.px -= nx * vr * D * (a.w / wt); a.py -= ny * vr * D * (a.w / wt);
       }
+    }
+  }
+
+  private solveSprings(h2: number) {
+    const parts = this.parts;
+    for (const sp of this.springs) {
+      if (sp.dead) continue;
+      const a = parts[sp.p1], b = parts[sp.p2];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.hypot(dx, dy);
+      if (d < 1e-9) continue;
+      const C = d - sp.rest;
+      if (Math.abs(C) > sp.yieldC) { sp.dead = true; continue; }  // nails let go
+      const at = sp.alpha / h2;
+      const wsum = a.w + b.w + at;
+      if (wsum < 1e-12) continue;
+      const dl = (-C - at * sp.lambda) / wsum;
+      sp.lambda += dl;
+      const nx = dx / d, ny = dy / d;
+      a.x -= dl * a.w * nx; a.y -= dl * a.w * ny;
+      b.x += dl * b.w * nx; b.y += dl * b.w * ny;
     }
   }
 

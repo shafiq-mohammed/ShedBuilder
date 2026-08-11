@@ -1,4 +1,4 @@
-import { Face, GridPt, Project, gridToWorld } from './structure';
+import { Face, GridPt, Project, clampDims, gridToWorld } from './structure';
 
 /**
  * Shared 2D-face -> 3D-world mapping, used by both the 3D compiler and the
@@ -12,9 +12,7 @@ import { Face, GridPt, Project, gridToWorld } from './structure';
  *   the rafters they cross.
  */
 
-export const SHED_DEPTH = 8;   // ft, left/right wall width
 export const SPACING = 2;      // truss copies on-center
-export const PLATE_H = 8;      // ft, wall top plate height (roof face origin)
 
 export type V3 = [number, number, number];
 
@@ -53,6 +51,7 @@ export interface FaceInstance {
 export function faceInstances(project: Project): FaceInstance[] {
   const out: FaceInstance[] = [];
   const profile = roofProfile(project);
+  const dims = clampDims(project.dims);
   for (const face of project.faces) {
     if (face.view === 'plan') {
       if (face.id === 'floorplan') {
@@ -60,7 +59,7 @@ export function faceInstances(project: Project): FaceInstance[] {
       } else {
         out.push({
           face, offset: 0,
-          toWorld: (lx, ly) => [lx, PLATE_H + profile(lx), ly],
+          toWorld: (lx, ly) => [lx, dims.wallHFt + profile(lx), ly],
         });
       }
       continue;
@@ -70,7 +69,7 @@ export function faceInstances(project: Project): FaceInstance[] {
     const ny = xa[2] * ya[0] - xa[0] * ya[2];
     const nz = xa[0] * ya[1] - xa[1] * ya[0];
     const offsets = face.id === 'roof'
-      ? Array.from({ length: SHED_DEPTH / SPACING + 1 }, (_, k) => k * SPACING)
+      ? Array.from({ length: Math.floor(dims.depthFt / SPACING) + 1 }, (_, k) => k * SPACING)
       : [0];
     for (const d of offsets) {
       out.push({

@@ -109,9 +109,10 @@ export function openView3D(project: Project): void {
   scene.fog = new THREE.Fog('#cfe0ea', 60, 140);
 
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 300);
-  camera.position.set(24, 14, 22);
+  const dims0 = project.dims ?? { widthFt: 12, depthFt: 8, wallHFt: 8 };
+  camera.position.set(dims0.widthFt * 2, dims0.wallHFt + 8, dims0.depthFt * 2.6);
   const controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.set(6, 4, 4);
+  controls.target.set(dims0.widthFt / 2, dims0.wallHFt / 2, dims0.depthFt / 2);
   controls.enableDamping = true;
   controls.maxPolarAngle = Math.PI * 0.52;
   controls.minDistance = 4;
@@ -126,6 +127,7 @@ export function openView3D(project: Project): void {
   sun.shadow.camera.top = 25; sun.shadow.camera.bottom = -25;
   scene.add(sun);
 
+  const dims = project.dims ?? { widthFt: 12, depthFt: 8, wallHFt: 8 };
   const ground = new THREE.Mesh(
     new THREE.CircleGeometry(80, 48),
     new THREE.MeshLambertMaterial({ color: '#9aa76f' }),
@@ -135,10 +137,10 @@ export function openView3D(project: Project): void {
   ground.receiveShadow = true;
   scene.add(ground);
   const slab = new THREE.Mesh(
-    new THREE.BoxGeometry(13, 0.4, 9),
+    new THREE.BoxGeometry(dims.widthFt + 1, 0.4, dims.depthFt + 1),
     new THREE.MeshLambertMaterial({ color: '#b9b3a6' }),
   );
-  slab.position.set(6, -0.2, 4);
+  slab.position.set(dims.widthFt / 2, -0.2, dims.depthFt / 2);
   slab.receiveShadow = true;
   scene.add(slab);
 

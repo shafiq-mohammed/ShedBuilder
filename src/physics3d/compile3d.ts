@@ -8,7 +8,7 @@ import {
 import { TUNE } from '../physics/tuning';
 import { Sim3 } from './solver3d';
 
-export { SHED_DEPTH, SPACING } from '../model/mapping3d';
+export { SPACING } from '../model/mapping3d';
 
 /**
  * Assemble the whole project into one 3D sim.
@@ -24,6 +24,8 @@ export { SHED_DEPTH, SPACING } from '../model/mapping3d';
  */
 export function compile3d(project: Project): Sim3 {
   const sim = new Sim3();
+  const dims = project.dims ?? { widthFt: 12, depthFt: 8, wallHFt: 8 };
+  sim.footprint = dims.widthFt * dims.depthFt;
   // bottom plates sit at y=0 ON the slab; collision ground is a touch below
   // so the ground clamp never fights members built at y=0
   sim.groundY = -0.4;
@@ -123,6 +125,8 @@ export function compile3d(project: Project): Sim3 {
 
   const jointUse = new Map<number, number>();
   const memberEnds: { segIdx: number; jointIdx: number }[] = [];
+  // joint -> adjacent chain particles, one per member touching it
+  const jointAdj = new Map<number, { nbr: number; member: string; faceId: string }[]>();
 
   for (const m of members) {
     const t = LUMBER_BY_ID[m.typeId];
@@ -142,6 +146,7 @@ export function compile3d(project: Project): Sim3 {
     mandatory.sort((a, b) => a.u - b.u);
 
     const chain: number[] = [weld(mandatory[0].p, m.inst.face.id)];
+    const weldIdxs: number[] = [0];
     const restList: number[] = [];
     let prevU = 0;
     for (let s = 1; s < mandatory.length; s++) {
@@ -160,8 +165,17 @@ export function compile3d(project: Project): Sim3 {
         restList.push(spanL / nFill);
       }
       chain.push(weld(st.p, m.inst.face.id));
+      weldIdxs.push(chain.length - 1);
       restList.push(spanL / nFill);
       prevU = st.u;
+    }
+    for (const wi of weldIdxs) {
+      const nbr = chain[wi + 1] ?? chain[wi - 1];
+      if (nbr === undefined) continue;
+      const jIdx = chain[wi];
+      let list = jointAdj.get(jIdx);
+      if (!list) { list = []; jointAdj.set(jIdx, list); }
+      list.push({ nbr, member: m.memberId, faceId: m.inst.face.id });
     }
 
     for (let k = 0; k < restList.length; k++) {
@@ -254,8 +268,41 @@ export function compile3d(project: Project): Sim3 {
     for (const idx of chain) sim.parts[idx].w = 0;
   }
 
-  // fastened member ends (per-face joint hardware setting)
+  // nailed joints carry a small moment before yielding: knee springs between
+  // members meeting at each joint (a real unbraced frame stands from a tap
+  // but still racks in a storm). Weaker face's fastening governs.
   const faceJointsById = new Map(project.faces.map((f) => [f.id as string, f.joints]));
+  for (const [jIdx, list] of jointAdj) {
+    let made = 0;
+    for (let i = 0; i < list.length && made < 6; i++) {
+      for (let j = i + 1; j < list.length && made < 6; j++) {
+        if (list[i].member === list[j].member) continue;
+        const hw = faceJointsById.get(list[i].faceId) === 'hardware'
+          && faceJointsById.get(list[j].faceId) === 'hardware';
+        const K = hw ? TUNE.JOINT_K_HARDWARE : TUNE.JOINT_K_NAILS;
+        const yieldTh = hw ? TUNE.JOINT_YIELD_HARDWARE : TUNE.JOINT_YIELD_NAILS;
+        const J = sim.parts[jIdx];
+        const A = sim.parts[list[i].nbr], B = sim.parts[list[j].nbr];
+        const ax = A.x - J.x, ay = A.y - J.y, az = A.z - J.z;
+        const bx = B.x - J.x, by = B.y - J.y, bz = B.z - J.z;
+        const a = Math.hypot(ax, ay, az), b = Math.hypot(bx, by, bz);
+        if (a < 1e-6 || b < 1e-6) continue;
+        const cosT = (ax * bx + ay * by + az * bz) / (a * b);
+        const sinT = Math.sqrt(Math.max(0, 1 - cosT * cosT));
+        if (sinT < 0.25) continue;                     // near-collinear: skip
+        const d = Math.hypot(B.x - A.x, B.y - A.y, B.z - A.z);
+        const dddTh = (a * b * sinT) / d;
+        sim.springs.push({
+          p1: list[i].nbr, p2: list[j].nbr, rest: d,
+          alpha: (dddTh * dddTh) / K,
+          yieldC: yieldTh * dddTh,
+          dead: false, lambda: 0,
+        });
+        made++;
+      }
+    }
+  }
+
   for (const e of memberEnds) {
     if (sim.parts[e.jointIdx].w === 0) continue;
     if ((jointUse.get(e.jointIdx) ?? 0) < 2) continue;

@@ -49,6 +49,8 @@ export function compileFace(face: Face): Sim {
 
   const jointUse = new Map<number, number>();       // particle -> member count
   const memberEnds: { segIdx: number; jointIdx: number }[] = [];
+  // joint -> adjacent chain particles, one per member touching it
+  const jointAdj = new Map<number, { nbr: number; member: string }[]>();
 
   for (const m of face.members) {
     const t = LUMBER_BY_ID[m.type];
@@ -73,6 +75,7 @@ export function compileFace(face: Face): Sim {
     mandatory.sort((a, b) => a.u - b.u);
 
     const chain: number[] = [joint(mandatory[0].i, mandatory[0].j)];
+    const weldIdxs: number[] = [0];
     const restList: number[] = [];
     let prevU = 0;
     for (let s = 1; s < mandatory.length; s++) {
@@ -87,8 +90,17 @@ export function compileFace(face: Face): Sim {
         restList.push(spanL / nFill);
       }
       chain.push(joint(st.i, st.j));
+      weldIdxs.push(chain.length - 1);
       restList.push(spanL / nFill);
       prevU = st.u;
+    }
+    for (const wi of weldIdxs) {
+      const nbr = chain[wi + 1] ?? chain[wi - 1];
+      if (nbr === undefined) continue;
+      const jIdx = chain[wi];
+      let list = jointAdj.get(jIdx);
+      if (!list) { list = []; jointAdj.set(jIdx, list); }
+      list.push({ nbr, member: m.id });
     }
     // this member touches every mandatory station (ends + welded T-joints)
     for (const st of mandatory) {
@@ -183,6 +195,37 @@ export function compileFace(face: Face): Sim {
   for (const a of face.anchors) {
     const idx = jointAt.get(ptKey(a));
     if (idx !== undefined) sim.parts[idx].w = 0;
+  }
+
+  // nailed joints carry a small moment before yielding: knee springs between
+  // the members meeting at each joint (this is why a real unbraced frame
+  // stands from a tap but still racks in a storm)
+  const K = face.joints === 'hardware' ? TUNE.JOINT_K_HARDWARE : TUNE.JOINT_K_NAILS;
+  const yieldTh = face.joints === 'hardware' ? TUNE.JOINT_YIELD_HARDWARE : TUNE.JOINT_YIELD_NAILS;
+  for (const [jIdx, list] of jointAdj) {
+    let made = 0;
+    for (let i = 0; i < list.length && made < 6; i++) {
+      for (let j = i + 1; j < list.length && made < 6; j++) {
+        if (list[i].member === list[j].member) continue;
+        const J = sim.parts[jIdx];
+        const A = sim.parts[list[i].nbr], B = sim.parts[list[j].nbr];
+        const a = Math.hypot(A.x - J.x, A.y - J.y);
+        const b = Math.hypot(B.x - J.x, B.y - J.y);
+        if (a < 1e-6 || b < 1e-6) continue;
+        const cosT = ((A.x - J.x) * (B.x - J.x) + (A.y - J.y) * (B.y - J.y)) / (a * b);
+        const sinT = Math.sqrt(Math.max(0, 1 - cosT * cosT));
+        if (sinT < 0.25) continue;                     // near-collinear: skip
+        const d = Math.hypot(B.x - A.x, B.y - A.y);
+        const dddTh = (a * b * sinT) / d;              // chord length per radian
+        sim.springs.push({
+          p1: list[i].nbr, p2: list[j].nbr, rest: d,
+          alpha: (dddTh * dddTh) / K,
+          yieldC: yieldTh * dddTh,
+          dead: false, lambda: 0,
+        });
+        made++;
+      }
+    }
   }
 
   // member ends fastened to another member (shared joint or T-joint) can pull

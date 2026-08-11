@@ -44,8 +44,30 @@ export interface Face {
   plane: { origin: [number, number, number]; xAxis: [number, number, number]; yAxis: [number, number, number] };
 }
 
+export interface ShedDims {
+  widthFt: number;    // front/back wall length (truss span)
+  depthFt: number;    // left/right wall length (truss run)
+  wallHFt: number;    // top plate height
+}
+
+export const DEFAULT_DIMS: ShedDims = { widthFt: 12, depthFt: 8, wallHFt: 8 };
+
+export function clampDims(d: Partial<ShedDims> | undefined): ShedDims {
+  const even = (v: number, lo: number, hi: number, dflt: number) => {
+    const n = Math.round(Number(v));
+    if (!Number.isFinite(n)) return dflt;
+    return Math.min(hi, Math.max(lo, n - (n % 2)));
+  };
+  return {
+    widthFt: even(d?.widthFt ?? DEFAULT_DIMS.widthFt, 8, 24, 12),
+    depthFt: even(d?.depthFt ?? DEFAULT_DIMS.depthFt, 6, 16, 8),
+    wallHFt: even(d?.wallHFt ?? DEFAULT_DIMS.wallHFt, 6, 12, 8),
+  };
+}
+
 export interface Project {
   version: 1;
+  dims: ShedDims;
   faces: Face[];
 }
 
