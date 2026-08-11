@@ -36,7 +36,13 @@ npm run dev        # http://localhost:5199
    - 🧱 **Bricks** — click to drop 100/200/500/1000 lb bricks
 6. `S` = slow motion, `R` = reset test, `Esc` = back to building.
 7. 🧊 **3D** assembles all six faces into an orbitable shed (trusses & joists
-   shown 2' on-center — the same spacing the 2D loads assume).
+   at 2' on-center — the same spacing the 2D loads assume) — then hit
+   **▶ Test in 3D** to physics-simulate the whole building at once: snow over
+   the entire roof, wind on the front wall, bricks dropped anywhere you click.
+   Cross-face connections are real: trusses bear on wall top plates, corners
+   tie together, and a roof with no walls under it falls. Purlins between
+   trusses and floor blocking are assumed automatically (an unbraced truss row
+   would just tip over — like real framing before sheathing).
 
 ## What it teaches
 
@@ -48,8 +54,10 @@ npm run dev        # http://localhost:5199
 
 The numbers are "game-real": stiffness/strength ratios come from actual dressed
 lumber section properties, loads are displayed in honest pounds, but everything
-is globally tuned for clear feedback rather than code compliance. **Do not use
-this to engineer an actual building.**
+is globally tuned for clear feedback rather than code compliance. The 3D sim
+treats members as bending isotropically at strong-axis stiffness (torsion and
+weak-axis orientation are ignored). **Do not use this to engineer an actual
+building.**
 
 ## Tech
 

@@ -3,16 +3,20 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Face, Project, gridToWorld } from '../model/structure';
 import { LUMBER_BY_ID } from '../model/lumber';
 import { h } from '../util/dom';
+import { Sim3 } from '../physics3d/solver3d';
+import { compile3d } from '../physics3d/compile3d';
+import { SCENARIOS3, Scenario3 } from '../physics3d/scenarios3d';
+import { playCrack, playThud } from '../ui/audio';
+import { stressColor } from '../util/colors';
 
 /**
- * Read-only assembled view: every face is placed in 3D via its plane
- * transform. The roof truss and floor joists are replicated at 2 ft
- * on-center across the shed depth, which is how the 2D physics loads
- * (tributary width) assume they're built.
+ * Assembled 3D view with a full physics test mode: the whole shed is
+ * simulated at once (walls + replicated trusses/joists welded together),
+ * every stick tinted by live stress, breaking and collapsing in 3D.
  */
 
-const SHED_DEPTH = 8;      // ft, left/right wall width
-const SPACING = 2;         // trusses / joists on-center
+const SHED_DEPTH = 8;
+const SPACING = 2;
 
 const v3 = (a: [number, number, number]) => new THREE.Vector3(a[0], a[1], a[2]);
 
@@ -22,7 +26,6 @@ function faceGroup(face: Face): THREE.Group {
   const xAxis = v3(face.plane.xAxis).normalize();
   const yAxis = v3(face.plane.yAxis).normalize();
   const normal = new THREE.Vector3().crossVectors(xAxis, yAxis).normalize();
-
   const toWorld = (x: number, y: number) =>
     origin.clone().addScaledVector(xAxis, x).addScaledVector(yAxis, y);
 
@@ -34,30 +37,27 @@ function faceGroup(face: Face): THREE.Group {
     const b = toWorld(b2.x, b2.y);
     const len = a.distanceTo(b);
     if (len < 1e-6) continue;
-
     const dir = b.clone().sub(a).normalize();
     const inPlane = new THREE.Vector3().crossVectors(normal, dir).normalize();
-    const geo = new THREE.BoxGeometry(len, t.depthIn / 12, t.thickIn / 12);
-    const mat = new THREE.MeshLambertMaterial({ color: t.color });
-    const mesh = new THREE.Mesh(geo, mat);
-    const basis = new THREE.Matrix4().makeBasis(dir, inPlane, normal);
-    mesh.quaternion.setFromRotationMatrix(basis);
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(len, t.depthIn / 12, t.thickIn / 12),
+      new THREE.MeshLambertMaterial({ color: t.color }),
+    );
+    mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(dir, inPlane, normal));
     mesh.position.copy(a.clone().add(b).multiplyScalar(0.5));
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
   }
-
   for (const pn of face.panels) {
     const a2 = gridToWorld(pn.a), b2 = gridToWorld(pn.b);
     const cx = (a2.x + b2.x) / 2, cy = (a2.y + b2.y) / 2;
     const w = Math.abs(b2.x - a2.x), hgt = Math.abs(b2.y - a2.y);
-    const geo = new THREE.BoxGeometry(w, hgt, 0.045);
-    const mat = new THREE.MeshLambertMaterial({ color: '#d8c391' });
-    const mesh = new THREE.Mesh(geo, mat);
-    const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, normal);
-    mesh.quaternion.setFromRotationMatrix(basis);
-    // sheathing sits just outside the framing
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(w, hgt, 0.045),
+      new THREE.MeshLambertMaterial({ color: '#d8c391' }),
+    );
+    mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, yAxis, normal));
     mesh.position.copy(toWorld(cx, cy).addScaledVector(normal, -0.1));
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -67,21 +67,28 @@ function faceGroup(face: Face): THREE.Group {
 }
 
 export function openView3D(project: Project): void {
+  // ---------- shell ----------
   const wrap = h('div', {
     style: {
       position: 'fixed', inset: '0', zIndex: '50', background: '#1d2126',
       display: 'flex', flexDirection: 'column',
     },
   });
+  const status = h('span', {
+    style: { color: '#cfe4f0', fontSize: '13px', marginLeft: '6px' },
+  });
+  const barButtons = h('div', {
+    style: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' },
+  });
   const bar = h('div', {
     style: {
       display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px',
-      background: '#12161a', color: '#ece7dc', fontSize: '14px',
+      background: '#12161a', color: '#ece7dc', fontSize: '14px', flexWrap: 'wrap',
     },
   },
     h('strong', {}, '🧊 Assembled shed'),
-    h('span', { style: { color: '#8fa1ad', fontSize: '12px' } },
-      'Drag to orbit, scroll to zoom, right-drag to pan. Trusses & joists shown 2\' on-center.'),
+    barButtons,
+    status,
     h('span', { style: { flex: '1' } }),
     h('button.btn', { onclick: () => close(), title: 'Close (Esc)' }, '✕ Close'),
   );
@@ -103,7 +110,6 @@ export function openView3D(project: Project): void {
 
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 300);
   camera.position.set(24, 14, 22);
-
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(6, 4, 4);
   controls.enableDamping = true;
@@ -111,7 +117,6 @@ export function openView3D(project: Project): void {
   controls.minDistance = 4;
   controls.maxDistance = 90;
 
-  // lights
   scene.add(new THREE.HemisphereLight('#e8f2ff', '#8a7a5c', 0.9));
   const sun = new THREE.DirectionalLight('#fff4e0', 1.6);
   sun.position.set(30, 40, 18);
@@ -121,26 +126,24 @@ export function openView3D(project: Project): void {
   sun.shadow.camera.top = 25; sun.shadow.camera.bottom = -25;
   scene.add(sun);
 
-  // ground
   const ground = new THREE.Mesh(
     new THREE.CircleGeometry(80, 48),
     new THREE.MeshLambertMaterial({ color: '#9aa76f' }),
   );
   ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -0.02;
+  ground.position.y = -0.42;
   ground.receiveShadow = true;
   scene.add(ground);
-
-  // slab
   const slab = new THREE.Mesh(
-    new THREE.BoxGeometry(13, 0.35, 9),
+    new THREE.BoxGeometry(13, 0.4, 9),
     new THREE.MeshLambertMaterial({ color: '#b9b3a6' }),
   );
-  slab.position.set(6, -0.18, 4);
+  slab.position.set(6, -0.2, 4);
   slab.receiveShadow = true;
   scene.add(slab);
 
-  // faces
+  // ---------- static preview ----------
+  const staticGroup = new THREE.Group();
   for (const face of project.faces) {
     const g = faceGroup(face);
     if (face.id === 'roof' || face.id === 'floor') {
@@ -149,13 +152,222 @@ export function openView3D(project: Project): void {
       for (let d = 0; d <= SHED_DEPTH; d += SPACING) {
         const copy = g.clone();
         copy.position.addScaledVector(normal, d);
-        scene.add(copy);
+        staticGroup.add(copy);
       }
     } else {
-      scene.add(g);
+      staticGroup.add(g);
     }
   }
+  scene.add(staticGroup);
 
+  // ---------- test mode ----------
+  let sim: Sim3 | null = null;
+  let scenario: Scenario3 | null = null;
+  let clickWeight = 200;
+  let slowmo = false;
+  let inst: THREE.InstancedMesh | null = null;
+  let panelMeshes: THREE.Mesh[] = [];
+  let heavyMeshes: THREE.Mesh[] = [];
+  const heavyGeo = new THREE.BoxGeometry(1, 1, 1);
+  const tmpM = new THREE.Matrix4();
+  const tmpQ = new THREE.Quaternion();
+  const tmpBasis = new THREE.Matrix4();
+  const tmpColor = new THREE.Color();
+  const X = new THREE.Vector3(), Y = new THREE.Vector3(), Z = new THREE.Vector3();
+  const UP = new THREE.Vector3(0, 1, 0);
+
+  const disposeSim = () => {
+    if (inst) { scene.remove(inst); inst.dispose(); inst = null; }
+    for (const m of panelMeshes) { scene.remove(m); m.geometry.dispose(); }
+    for (const m of heavyMeshes) scene.remove(m);
+    panelMeshes = [];
+    heavyMeshes = [];
+    sim = null;
+    scenario = null;
+  };
+
+  const startTest = (make: () => Scenario3) => {
+    disposeSim();
+    sim = compile3d(project);
+    scenario = make();
+    clickWeight = scenario.defaultWeight ?? clickWeight;
+    staticGroup.visible = false;
+
+    inst = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshLambertMaterial({ color: '#ffffff' }),
+      sim.segs.length,
+    );
+    inst.castShadow = true;
+    inst.receiveShadow = true;
+    inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    scene.add(inst);
+
+    for (const pn of sim.panels) {
+      void pn;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3));
+      geo.setIndex([0, 1, 2, 0, 2, 3]);
+      const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
+        color: '#d8c391', side: THREE.DoubleSide,
+      }));
+      mesh.castShadow = true;
+      panelMeshes.push(mesh);
+      scene.add(mesh);
+    }
+    refreshBar();
+  };
+
+  const stopTest = () => {
+    disposeSim();
+    staticGroup.visible = true;
+    status.textContent = '';
+    refreshBar();
+  };
+
+  const syncSimMeshes = () => {
+    if (!sim || !inst) return;
+    const parts = sim.parts;
+    for (let i = 0; i < sim.segs.length; i++) {
+      const s = sim.segs[i];
+      if (s.broken) {
+        tmpM.makeScale(0, 0, 0);
+        inst.setMatrixAt(i, tmpM);
+        continue;
+      }
+      const a = parts[s.p1], b = parts[s.p2];
+      X.set(b.x - a.x, b.y - a.y, b.z - a.z);
+      const len = X.length();
+      if (len < 1e-6) continue;
+      X.divideScalar(len);
+      Z.copy(UP).cross(X);
+      if (Z.lengthSq() < 1e-6) Z.set(0, 0, 1);
+      Z.normalize();
+      Y.copy(X).cross(Z).negate().normalize();
+      tmpBasis.makeBasis(X, Y, Z);
+      tmpQ.setFromRotationMatrix(tmpBasis);
+      const t = LUMBER_BY_ID[s.typeId];
+      const depth = t ? t.depthIn / 12 : 0.09;
+      const thick = t ? t.thickIn / 12 : 0.09;
+      tmpM.compose(
+        new THREE.Vector3((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2),
+        tmpQ,
+        new THREE.Vector3(len, depth, thick),
+      );
+      inst.setMatrixAt(i, tmpM);
+      // color: wood tinted toward stress
+      const base = t ? t.color : '#8a8a80';
+      tmpColor.set(base);
+      const st = Math.min(s.stress, 1);
+      if (st > 0.05) tmpColor.lerp(new THREE.Color(stressColor(st)), Math.min(0.25 + st * 0.6, 0.85));
+      inst.setColorAt(i, tmpColor);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+
+    for (let k = 0; k < sim.panels.length; k++) {
+      const pn = sim.panels[k];
+      const mesh = panelMeshes[k];
+      if (!mesh) continue;
+      mesh.visible = !pn.broken;
+      const pos = mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+      pn.corners.forEach((ci, ix) => {
+        const p = parts[ci];
+        pos.setXYZ(ix, p.x, p.y, p.z);
+      });
+      pos.needsUpdate = true;
+      mesh.geometry.computeVertexNormals();
+      (mesh.material as THREE.MeshLambertMaterial).color
+        .set('#d8c391')
+        .lerp(new THREE.Color(stressColor(Math.min(pn.stress, 1))), Math.min(pn.stress * 0.6, 0.8));
+    }
+
+    while (heavyMeshes.length < sim.heavies.length) {
+      const hv = sim.heavies[heavyMeshes.length];
+      const mesh = new THREE.Mesh(
+        heavyGeo,
+        new THREE.MeshLambertMaterial({ color: '#a5553a' }),
+      );
+      mesh.scale.setScalar(hv.r * 1.7);
+      mesh.castShadow = true;
+      heavyMeshes.push(mesh);
+      scene.add(mesh);
+      playThud();
+    }
+    for (let k = 0; k < sim.heavies.length; k++) {
+      const p = parts[sim.heavies[k].p];
+      heavyMeshes[k].position.set(p.x, p.y, p.z);
+    }
+  };
+
+  // ---------- bar UI ----------
+  const refreshBar = () => {
+    barButtons.innerHTML = '';
+    if (!sim) {
+      barButtons.append(
+        h('button.btn.primary', {
+          onclick: () => startTest(SCENARIOS3[0]),
+          title: 'Simulate the whole assembled shed',
+        }, '▶ Test in 3D'),
+        h('span', { style: { color: '#8fa1ad', fontSize: '12px' } },
+          'Drag to orbit · scroll to zoom · trusses & joists 2\' on-center, purlins/blocking assumed'),
+      );
+      return;
+    }
+    for (const make of SCENARIOS3) {
+      const proto = make();
+      barButtons.append(h('button.btn', {
+        onclick: () => startTest(make),
+        title: proto.desc,
+        style: scenario?.id === proto.id ? { borderColor: '#e0552c', background: '#55402f' } : {},
+      }, `${proto.icon} ${proto.label}`));
+    }
+    if (scenario?.weights) {
+      for (const w of scenario.weights) {
+        barButtons.append(h('button.chip', {
+          onclick: () => { clickWeight = w; refreshBar(); },
+          class: `chip${clickWeight === w ? ' active' : ''}`,
+        }, `${w} lb`));
+      }
+    }
+    barButtons.append(
+      h('button.btn', { onclick: () => scenario && startTest(SCENARIOS3.find((m) => m().id === scenario!.id)!), title: 'Restart this test' }, '↻'),
+      h('button.btn', {
+        onclick: () => { slowmo = !slowmo; refreshBar(); },
+        style: slowmo ? { borderColor: '#e0552c' } : {},
+        title: 'Slow motion',
+      }, '🐌 ¼×'),
+      h('button.btn', { onclick: () => stopTest() }, '⏹ Preview'),
+    );
+  };
+  refreshBar();
+
+  // ---------- clicks (bricks) ----------
+  const raycaster = new THREE.Raycaster();
+  let downPos: { x: number; y: number } | null = null;
+  renderer.domElement.addEventListener('pointerdown', (e) => {
+    downPos = { x: e.clientX, y: e.clientY };
+  });
+  renderer.domElement.addEventListener('pointerup', (e) => {
+    if (!downPos || !sim || !scenario?.onClick) return;
+    const moved = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
+    downPos = null;
+    if (moved > 6) return;   // was an orbit drag
+    const rect = renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    raycaster.setFromCamera(ndc, camera);
+    const targets: THREE.Object3D[] = [ground, slab];
+    if (inst) targets.push(inst);
+    const hits = raycaster.intersectObjects(targets, false);
+    if (hits.length === 0) return;
+    const p = hits[0].point;
+    scenario.onClick(sim, p.x, Math.max(p.y, 0), p.z, clickWeight);
+  });
+
+  // ---------- lifecycle ----------
   const resize = () => {
     const w = canvasHost.clientWidth, hh = canvasHost.clientHeight;
     renderer.setSize(w, hh);
@@ -176,16 +388,53 @@ export function openView3D(project: Project): void {
     open = false;
     window.removeEventListener('keydown', onKey, true);
     ro.disconnect();
+    disposeSim();
     controls.dispose();
     renderer.dispose();
     wrap.remove();
   }
 
-  const animate = () => {
+  // dev hook: lets tests pump the sim even when RAF is throttled
+  (window as any).__view3d = {
+    getSim: () => sim,
+    getScenario: () => scenario,
+    pump: (secs: number) => {
+      if (!sim || !scenario) return 'no sim';
+      for (let i = 0; i < secs * 60; i++) {
+        sim.clearForces();
+        if (!sim.settling) scenario.tick(sim, 1 / 60);
+        sim.step(1 / 60);
+      }
+      syncSimMeshes();
+      status.textContent = scenario.status(sim);
+      return scenario.status(sim);
+    },
+    click: (x: number, y: number, z: number, w: number) =>
+      scenario?.onClick && sim ? scenario.onClick(sim, x, y, z, w) : null,
+  };
+
+  let lastT = 0;
+  let lastStatus = 0;
+  const animate = (t: number) => {
     if (!open) return;
+    const dt = Math.min((t - lastT) / 1000, 1 / 30) || 1 / 60;
+    lastT = t;
+    if (sim && scenario) {
+      sim.clearForces();
+      const sdt = dt * (slowmo ? 0.25 : 1);
+      if (!sim.settling) scenario.tick(sim, sdt);
+      sim.step(sdt);
+      const events = sim.drainBreaks();
+      if (events.length > 0) playCrack(Math.min(events.length, 3));
+      syncSimMeshes();
+      if (t - lastStatus > 150) {
+        lastStatus = t;
+        status.textContent = sim.settling ? 'settling…' : scenario.status(sim);
+      }
+    }
     controls.update();
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
   };
-  animate();
+  requestAnimationFrame(animate);
 }
